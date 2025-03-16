@@ -123,23 +123,26 @@ int** allocate(int rows, int cols)
 }      
 
 
-int* send_count = malloc(sizeof(int)*size);
-int* displacement = malloc(sizeof(int)*size);
+
 void sobel_edge_detector(pgm* image, pgm* out_image) {
-	int rank, size;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	int* send_count = malloc(sizeof(int)*size);
+	int* displacement = malloc(sizeof(int)*size);
 	send_count   = (int*)malloc(sizeof(int)*size);
 	displacement = (int*)malloc(sizeof(int)*size);
 	int** local_buf = allocate(image->width, image->height);
 	int proc = image->width*image->height/size, remainder = image->width*image->height%size;
+	int local_row = proc + (rank <= remainder ? 1 : 0);
 	int sum = 0;
 	for(int i = 0; i < size; i++) 
 	{
 		send_count[i] = proc + (i <= remainder ? 1 : 0);
 		displacement[i] = 0;
-		sum += send_count;
+		sum += send_count[i];
 	}
+	MPI_Scatterv(out_image->imageData, send_count, displacement, MPI_INT, local_buf, local_row*out_image->height, MPI_INT, 0, MPI_COMM_WORLD);
+	printf("local_rows = %d\n", local_row);
 	int i, j, gx, gy;
 	int mx[3][3] = {
 		{-1, 0, 1},
