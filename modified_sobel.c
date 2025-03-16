@@ -2,8 +2,19 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include "mpi.h"
+#include <omp.h>
+#include <time.h> 
+#include <unistd.h> 
 
 int isspace(int argument);
+int rank, size;
+
+void mpi_setup() {
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+}
 
 typedef struct {
 	int width;
@@ -19,20 +30,24 @@ void init_out_image( pgm* out, pgm image){
 	out->height = image.height;
 
 	out->imageData = (int8_t**) calloc(out->height, sizeof(int8_t*));
+	#pragma omp parallel for private(i)
 	for(i = 0; i < out->height; i++) {
 		out->imageData[i] = calloc(out->width, sizeof(int8_t));
 	}
 
 	out->gx = (int8_t**) calloc(out->height, sizeof(int*));
+	#pragma omp parallel for private(i)
 	for(i = 0; i < out->height; i++) {
 		out->gx[i] = calloc(out->width, sizeof(int));
 	}
 
 	out->gy = (int8_t**) calloc(out->height, sizeof(int8_t*));
+	#pragma omp parallel for private(i)
 	for(i = 0; i < out->height; i++) {
 		out->gy[i] = calloc(out->width, sizeof(int8_t));
 	}
 
+	#pragma omp parallel for private(i,j)
 	for(i = 0; i < out->height; i++) {
 		for(j = 0; j < out->width; j++) {
 			out->imageData[i][j] = image.imageData[i][j];
@@ -97,7 +112,34 @@ int convolution(pgm* image, int kernel[3][3], int row, int col) {
 	return sum;
 }
 
+int** allocate(int rows, int cols)
+{
+    int** arr = malloc(rows*sizeof(int*));
+    for(int i = 0; i < rows; i++)
+    {
+        arr[i] = malloc(sizeof(int)*cols);
+    }
+    return arr;
+}      
+
+
+int* send_count = malloc(sizeof(int)*size);
+int* displacement = malloc(sizeof(int)*size);
 void sobel_edge_detector(pgm* image, pgm* out_image) {
+	int rank, size;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	send_count   = (int*)malloc(sizeof(int)*size);
+	displacement = (int*)malloc(sizeof(int)*size);
+	int** local_buf = allocate(image->width, image->height);
+	int proc = image->width*image->height/size, remainder = image->width*image->height%size;
+	int sum = 0;
+	for(int i = 0; i < size; i++) 
+	{
+		send_count[i] = proc + (i <= remainder ? 1 : 0);
+		displacement[i] = 0;
+		sum += send_count;
+	}
 	int i, j, gx, gy;
 	int mx[3][3] = {
 		{-1, 0, 1},
@@ -146,7 +188,7 @@ void min_max_normalization(pgm* image, int8_t** matrix) {
 			}*/
 			double ratio = (double) (matrix[i][j] - min) / (max - min);
 			//printf("Ratio: %d, Matrix value before: %d\n", ratio, matrix[i][j]);
-			matrix[i][j] = ratio * 255;
+			matrix[i][j] = ratio * 64;
 			//printf("Matrix value after: %d\n", matrix[i][j]);
 		}
 	}
@@ -181,10 +223,11 @@ void write_pgm_file(pgm* image, char dir[], int8_t** matrix, char name[]) {
 
 int main(int argc, char **argv)
 {
+	MPI_Init(&argc,&argv);
 	pgm image, out_image;
 	char dir[200];
 	printf("Enter the file name: ");
-	scanf("%s", dir);
+	strcpy(dir, argv[1]);
 
 	read_pgm_file(dir, &image);
 	padding(&image);
@@ -206,5 +249,6 @@ int main(int argc, char **argv)
 	free(out_image.imageData);
 	free(out_image.gx);
 	free(out_image.gy);
+	MPI_Finalize();
 	return 0;
 }
