@@ -138,15 +138,18 @@ void min_max_normalization(pgm* image, int8_t** matrix) {
 	printf("min: %d, max: %d\n", min, max);
 	for(i = 0; i < image->height; i++) {
 		for(j = 0; j < image->width; j++) {
-			/*if (matrix[i][j] > min + 70) {
+			// *** This code artificially increases the brightness of found edges since I was having trouble sometimes with the given normalization (what I used in the file I gave you) *** //
+			// There could also be some issue with using int8_t instead of uint8_t but I have not tried the difference yet and I think int8_t looks good enough
+			if (matrix[i][j] > min + 70) {
 				if (matrix[i][j] + 30 < 255)
 					matrix[i][j] = matrix[i][j] + 30;
 				else
 					matrix[i][j] = 255;
-			}*/
-			double ratio = (double) (matrix[i][j] - min) / (max - min);
+			}
+			// *** This is the normalization that was done in the original repo *** //
+			//double ratio = (double) (matrix[i][j] - min) / (max - min);
 			//printf("Ratio: %d, Matrix value before: %d\n", ratio, matrix[i][j]);
-			matrix[i][j] = ratio * 255;
+			//matrix[i][j] = ratio * 255;
 			//printf("Matrix value after: %d\n", matrix[i][j]);
 		}
 	}
