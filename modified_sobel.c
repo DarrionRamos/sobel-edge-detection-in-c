@@ -127,22 +127,27 @@ int** allocate(int rows, int cols)
 void sobel_edge_detector(pgm* image, pgm* out_image) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	int row = out_image->width/size, col = out_image->height;
+	int** local_buf = allocate(row, col);
+	int proc = out_image->width*out_image->height/size, remainder = out_image->width*out_image->height%size;
+	int local_row = proc + (rank <= remainder ? 1 : 0);
 	int* send_count = malloc(sizeof(int)*size);
 	int* displacement = malloc(sizeof(int)*size);
-	send_count   = (int*)malloc(sizeof(int)*size);
-	displacement = (int*)malloc(sizeof(int)*size);
-	int** local_buf = allocate(image->width, image->height);
-	int proc = image->width*image->height/size, remainder = image->width*image->height%size;
-	int local_row = proc + (rank <= remainder ? 1 : 0);
 	int sum = 0;
+	
 	for(int i = 0; i < size; i++) 
 	{
 		send_count[i] = proc + (i <= remainder ? 1 : 0);
 		displacement[i] = 0;
 		sum += send_count[i];
 	}
-	MPI_Scatterv(out_image->imageData, send_count, displacement, MPI_INT, local_buf, local_row*out_image->height, MPI_INT, 0, MPI_COMM_WORLD);
+
+	MPI_Scatterv(&(out_image->imageData[0][0]), send_count, displacement, MPI_INT, &(local_buf[0][0]), send_count[rank], MPI_INT, 0, MPI_COMM_WORLD);
+	
+	//MPI_Scatter(&(out_image->imageData[0][0]), proc, MPI_INT, &(local_buf[0][0]), proc, MPI_INT, 0, MPI_COMM_WORLD);
+	printf("P%d matrix: %dx%d", rank, out_image->height, out_image->width);
 	printf("local_rows = %d\n", local_row);
+	printf("rows per process = %d", proc); 
 	int i, j, gx, gy;
 	int mx[3][3] = {
 		{-1, 0, 1},
@@ -155,7 +160,7 @@ void sobel_edge_detector(pgm* image, pgm* out_image) {
 		{1, 2, 1}
 	};
 
-	for (i = 1; i < image->height - 2; i++) {
+/*	for (i = 1; i < image->height - 2; i++) {
 		for (j = 1; j < image->width - 2; j++) {
 			gx = convolution(image, mx, i, j);
 			gy = convolution(image, my, i, j);
@@ -164,7 +169,18 @@ void sobel_edge_detector(pgm* image, pgm* out_image) {
 			out_image->gy[i][j] = gy;
 		}
 	}
-
+*/
+	for (i = 0; i < row ; i++) {
+		for (j = 0; j < col ; j++) {
+			gx = convolution(image, mx, i, j);
+			gy = convolution(image, my, i, j);
+			local_buf[i][j] = sqrt(gx*gx + gy*gy);
+			//printf("%d\t", local_buf[i][j]);
+		}
+	}
+	MPI_Gatherv (	local_buf, send_count[rank], MPI_INT, 
+					out_image->imageData, send_count, displacement,
+					 MPI_INT, 0, MPI_COMM_WORLD);
 }
 
 void min_max_normalization(pgm* image, int8_t** matrix) {
