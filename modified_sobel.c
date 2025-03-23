@@ -103,7 +103,7 @@ int convolution(pgm* image, int kernel[3][3], int row, int col) {
 	return sum;
 }
 
-void sobel_edge_detector(pgm* image, pgm* out_image) {
+void sobel_edge_detector(pgm* image, pgm* out_image, int rows) {
 	int i, j, gx, gy;
 	int mx[3][3] = {
 		{-1, 0, 1},
@@ -252,6 +252,35 @@ void write_pgm_file(pgm* image, char dir[], int8_t** matrix, char name[]) {
 	fclose(out_image);
 }
 
+int8_t* array2d_to_1d(pgm* twod)
+{
+	int8_t* one_d = (int8_t*)malloc(twod->height*twod->width*sizeof(int8_t));
+
+	for(int i = 0; i < twod->height; i++)
+	{
+		for(int j = 0; j < twod->width; j++)
+		{
+			one_d[i*twod->width+j] = twod->imageData[i][j];
+		}
+	}
+	return one_d;
+}
+
+int** array1d_to_2d(int* one_d, int height, int width)
+{
+	int** arr2d = (int**)malloc(width*sizeof(int*));
+
+	for(int i = 0; i < height; i++)
+	{
+		arr2d[i] = (int*)malloc(height*sizeof(int));
+		for(int j = 0; j < width; j++)
+		{
+			arr2d[i][j] = one_d[i*width+j];
+		}
+	}
+	return arr2d;
+}
+
 int main(int argc, char **argv)
 {
 	MPI_Init(&argc,&argv);
@@ -266,25 +295,57 @@ int main(int argc, char **argv)
 	read_pgm_file(dir, &image);
 	padding(&image);
 	init_out_image(&out_image, image);
-	int proc_rows = image.height/size;
+	int proc_rows = 5000/size;
 
-	pgm local;
-	//num rows to send
-	local.height = proc_rows;
+	//int8_t* local_image = (int8_t*)calloc(proc_rows*5000,sizeof(int8_t));
+	//int8_t* image_1d = array2d_to_1d(image.imageData, 5000, 5000);
 
-	MPI_Scatter(image.imageData, proc_rows, MPI_INT,
-				local.imageData, proc_rows, MPI_INT, 0, MPI_COMM_WORLD);
-	sobel_edge_detector(&local, &out_image);
+	int* global = (int*)calloc(5000*5000, sizeof(int));
+	int8_t* image_1d = array2d_to_1d(&image);
+	int* local_image = (int*)calloc(5000*proc_rows, sizeof(int));
+	MPI_Scatter(image_1d, proc_rows*5000, MPI_INT,
+				local_image, proc_rows*5000, MPI_INT, 0, MPI_COMM_WORLD);
+	int* buff = (int*)calloc(5000*proc_rows, sizeof(int));
+	int gx,  gy;
+	for (int i = 1; i < proc_rows*5000+1; i++) {
+		for (int j = 1; j < 5000 - 2 + 1; j++) {
+			gx = (local_image[(i-1)*5000+(j-1)]*-1 	+ local_image[(i+1)*5000+(j-1)]*1 
+				+ local_image[(i-1)*5000+(j)]*-2 	+ local_image[(i+1)*5000+(j)]*2 
+				+ local_image[(i-1)*5000+(j+1)]*-1 	+ local_image[(i+1)*5000+(j+1)]*1);
+			gy = (local_image[(i-1)*5000+(j-1)]*1 	+ local_image[i*5000+(j-1)]*2 
+				+ local_image[(i+1)*5000+(j-1)]*1 	+ local_image[(i-1)*5000+(j+1)]*-1 
+				+ local_image[i*5000+(j+1)]*-2 		+ local_image[(i+1)*5000+(j+1)]*-1);
 
-	MPI_Gather(local.imageData, proc_rows, MPI_INT,
-			image.imageData, proc_rows, MPI_INT, 0 , MPI_COMM_WORLD);
+				//printf("%d", sqrt(gx*gx+gy*gy));
+			
+		}
+	}
+	MPI_Gather(buff, proc_rows*5000, MPI_INT,
+			global, proc_rows*5000, MPI_INT, 0, MPI_COMM_WORLD);
 
-	min_max_normalization(&out_image, out_image.imageData);
-	min_max_normalization(&out_image, out_image.gx);
-	min_max_normalization(&out_image, out_image.gy);
+	if(rank == 0)
+	{
+		for(int i=0;i<5000;i++)
+		{
+			for(int j=0;j<5000;j++)
+			{
+				out_image.imageData[i][j] = buff[i*5000+j];
+			}
+		}
+		min_max_normalization(&out_image, out_image.imageData);
+		write_pgm_file(&out_image, dir, out_image.imageData, "_filtered.txt");
+	}
+
+	//sobel_edge_detector(&local_image, &out_image);
+	//MPI_Gather(local.imageData, proc_rows, MPI_INT,
+	//			image.imageData, proc_rows, MPI_INT, 0 , MPI_COMM_WORLD);
+
+	//min_max_normalization(&out_image, out_image.imageData);
+	//min_max_normalization(&out_image, out_image.gx);
+	//min_max_normalization(&out_image, out_image.gy);
 
 
-	write_pgm_file(&out_image, dir, out_image.imageData, "_filtered.txt");
+	//write_pgm_file(&out_image, dir, out_image.imageData, "_filtered.txt");
 
 	printf("\nGradient saved: %s \n", dir);
 //	write_pgm_file(&out_image, dir, out_image.gx, ".GX.pgm");
