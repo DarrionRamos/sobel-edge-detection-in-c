@@ -243,7 +243,7 @@ int main(int argc, char **argv)
 	int proc_rows = 5000/size;
 	int8_t rec_buf[proc_rows];
 	int8_t out_buf[5000*5000];
-	int8_t data_1d;
+	int8_t* data_1d;
 
 	if (rank == 0) {
 		printf("Enter the file name: ");
