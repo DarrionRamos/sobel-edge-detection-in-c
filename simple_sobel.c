@@ -48,7 +48,8 @@ int convolution(int8_t* image_data, int kernel[3][3], int row_l, int col_l) {
 	int i, j, sum = 0;
 	for (i = 0; i < 3; i++) {
 		for (j = 0; j < 3; j++) {
-			sum += image_data[i*3+j] * kernel[i][j];
+			sum += image_data[(i+row_l)*3+(j+col_l)] * kernel[i][j];
+			printf("Image data at: i: %d, j: %d, is: %d\n", i+row_l, j+col_l, image_data[(i+row_l)*3+(j*col_l)]);
 		}
 	}
 	return sum;
@@ -72,6 +73,8 @@ void sobel_edge_detector(int8_t* in_image, int8_t* out_image) {
 			gx = convolution(in_image, mx, i, j);
 			gy = convolution(in_image, my, i, j);
 			out_image[i*(row-2)+j] = sqrt(gx*gx + gy*gy);
+			if (i == 4)
+				printf("i: %d, j: %d, gx: %d, gy: %d\n", i, j, gx, gy);
 		}
 	}
 }
